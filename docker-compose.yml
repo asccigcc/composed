@@ -1,0 +1,84 @@
+version: "3.9"
+
+services:
+  redis:
+    image: "redis/redis-stack-server:latest"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+    container_name: "redis"
+    ports:
+      - "6379:6379"
+    volumes:
+      - "redis_data:/bitnami/redis/data"
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: "rabbitmq"
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq/
+      - rabbitmq_log:/var/log/rabbitmq
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:15672"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+
+  dynamo:
+    image: "local-dynamo"
+    build:
+      context: ./dynamodb
+    container_name: "dynamodb"
+    ports:
+      - "8000:8000"
+
+  postgres:
+    image: "postgres:10.13"
+    container_name: "databases"
+    ports:
+      - "5441:5432"
+    environment:
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - dbdata:/var/lib/postgresql/data
+
+  dev:
+    image: "dev-gems"
+    build:
+      context: ./
+      dockerfile: ./dockerfile/Dockerfile
+      args:
+        - GITHUB_ACCESS_TOKEN=${GITHUB_ACCESS_TOKEN}
+    volumes:
+      - ~/.vim:/root/.vim
+      - ~/.vimrc:/root/.vimrc
+      - ./:/ruby/src/github.com/dev-gems
+    depends_on:
+      - postgres
+      - dynamo
+    container_name: "dev"
+    ports:
+      - "8088:8080"
+      - "9398:9394"
+    env_file: .env
+    environment:
+      - DATABASE_URL=${POSTGRES_URL}
+      - DATABASE_MAX_CONNECTION=${DATABASE_MAX_CONNECTION}
+      - DATABASE_POOL_TIMEOUT=${DATABASE_POOL_TIMEOUT}
+      - TEST_DATABASE_URL=${POSTGRES_URL}
+      - REDIS_URL=redis://redis:6379/0
+    tty: true
+    stdin_open: true
+
+volumes:
+  dbdata:
+  assets:
+  redis_data:
+    driver: local
+  rabbitmq_data:
+  rabbitmq_log:
